@@ -8,7 +8,7 @@ repository = "https://github.com/feint123/code-graph"
 homepage = "https://github.com/feint123"
 description = "An egui app that can display code graphics and find all references"
 keywords = ["egui", "ast", "coding"]
-categories = ["GUI"]
+categories = ["gui", "command-line-utilities"]
 
 [[bin]]
 name = "code-graph"
