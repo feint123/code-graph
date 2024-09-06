@@ -13,6 +13,8 @@ an egui app that can display code graphics and find all references
 
 ![图片](media/screenshot-1.webp)
 
+![图片](media/screenshot-2.webp)
+
 #### 使用第三方编辑器
 
 1. VSCode：`shift+command+p` 搜索 `install code command`

@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{fs::read_dir, path::Path};
 
 use eframe::egui::{CollapsingHeader, Ui};
 use egui::{emath, Color32, Pos2, Rect, Stroke, Vec2};
 use lang::{CQuery, JavaQuery, JsQuery, RustQuery, SymbolQuery};
+use lazy_static::lazy_static;
 use tree_sitter::Node;
 use tree_sitter::Parser;
 use uuid::Uuid;
@@ -120,7 +122,7 @@ pub fn recursion_dir(root_path: &Path, pathes: &mut Vec<PathBuf>, mut root_tree:
     }
     return root_tree;
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum CodeBlockType {
     FUNCTION,
     METHOD,
@@ -200,6 +202,27 @@ pub struct Graph {
     focus_node: Option<CodeNodeIndex>,
 }
 
+lazy_static! {
+    static ref BLOCK_TYPE_DARK_COLORS: HashMap<CodeBlockType, egui::Color32> = {
+        let mut m = HashMap::new();
+        m.insert(CodeBlockType::NORMAL, egui::Color32::DARK_GRAY);
+        m.insert(CodeBlockType::FUNCTION, egui::Color32::DARK_BLUE);
+        m.insert(CodeBlockType::STRUCT, egui::Color32::from_rgb(204, 112, 0));
+        m.insert(CodeBlockType::CONST, egui::Color32::from_rgb(204, 112, 0));
+        m.insert(CodeBlockType::CLASS, egui::Color32::DARK_GREEN);
+        m
+    };
+    static ref BLOCK_TYPE_LIGHT_COLORS: HashMap<CodeBlockType, egui::Color32> = {
+        let mut m = HashMap::new();
+        m.insert(CodeBlockType::NORMAL, egui::Color32::LIGHT_GRAY);
+        m.insert(CodeBlockType::FUNCTION, egui::Color32::LIGHT_BLUE);
+        m.insert(CodeBlockType::STRUCT, egui::Color32::LIGHT_YELLOW);
+        m.insert(CodeBlockType::CONST, egui::Color32::LIGHT_YELLOW);
+        m.insert(CodeBlockType::CLASS, egui::Color32::LIGHT_GREEN);
+        m
+    };
+}
+
 impl Graph {
     pub fn new() -> Self {
         Self {
@@ -257,13 +280,30 @@ impl Graph {
     pub fn ui(&mut self, ui: &mut Ui) -> egui::Response {
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
+
+        let focus_stroke_color;
+        let stroke_color;
+        let text_color;
+        let grid_color;
+
+        if ui.ctx().style().visuals.dark_mode {
+            stroke_color = egui::Color32::LIGHT_GRAY;
+            text_color = egui::Color32::WHITE;
+            focus_stroke_color = egui::Color32::LIGHT_BLUE;
+            grid_color = Color32::from_gray(50);
+        } else {
+            focus_stroke_color = egui::Color32::BLUE;
+            stroke_color = egui::Color32::DARK_GRAY;
+            text_color = egui::Color32::DARK_GRAY;
+            grid_color = Color32::from_gray(220);
+        }
+
         // 获取可用区域
         let rect = ui.max_rect();
 
         // 定义网格参数
         let cell_size = 10.0; // 网格单元格大小
-        let color = Color32::from_gray(220); // 网格线颜色
-        let stroke = Stroke::new(0.5, color); // 线条宽度和颜色
+        let stroke = Stroke::new(0.5, grid_color); // 线条宽度和颜色
 
         // 绘制垂直线
         let mut x = rect.left();
@@ -304,27 +344,25 @@ impl Graph {
                 node_pos,
                 egui::vec2(text_size.x + 16.0, text_size.y + 8.0),
             );
-            let fill_color = match node.block_type {
-                CodeBlockType::NORMAL => egui::Color32::LIGHT_GRAY,
-                CodeBlockType::FUNCTION => egui::Color32::LIGHT_BLUE,
-                CodeBlockType::STRUCT | CodeBlockType::CONST => egui::Color32::LIGHT_YELLOW,
-                CodeBlockType::CLASS => egui::Color32::LIGHT_GREEN,
-                _ => egui::Color32::LIGHT_GRAY,
+            let fill_color = if ui.ctx().style().visuals.dark_mode {
+                BLOCK_TYPE_DARK_COLORS
+                    .get(&node.block_type)
+                    .copied()
+                    .unwrap_or(egui::Color32::DARK_GRAY)
+            } else {
+                BLOCK_TYPE_LIGHT_COLORS
+                    .get(&node.block_type)
+                    .copied()
+                    .unwrap_or(egui::Color32::LIGHT_GRAY)
             };
-
-            painter.rect(
-                rect,
-                5.0,
-                fill_color,
-                Stroke::new(1.0, egui::Color32::DARK_GRAY),
-            );
+            painter.rect(rect, 5.0, fill_color, Stroke::new(1.0, stroke_color));
 
             painter.text(
                 node_pos + Vec2::new(8.0, 4.0),
                 egui::Align2::LEFT_TOP,
                 &node.label,
                 egui::FontId::default(),
-                egui::Color32::DARK_GRAY,
+                text_color,
             );
 
             let point_id = response.id.with(&node.id);
@@ -345,7 +383,7 @@ impl Graph {
                         rect,
                         5.0,
                         egui::Color32::TRANSPARENT,
-                        Stroke::new(2.5, egui::Color32::BLUE),
+                        Stroke::new(2.5, focus_stroke_color),
                     );
                 }
             }
