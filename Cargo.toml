@@ -1,6 +1,6 @@
 [package]
 name = "code-graph"
-version = "0.0.2"
+version = "0.0.3"
 license = "MIT"
 readme = "README.md"
 edition = "2021"

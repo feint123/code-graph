@@ -11,9 +11,9 @@ an egui app that can display code graphics and find all references
 
 #### 界面
 
-![图片](media/screenshot-1.webp)
-
-![图片](media/screenshot-2.webp)
+| Light | Dark |
+|-------|------|
+| ![Light mode](media/screenshot-1.webp) | ![Dark mode](media/screenshot-2.webp) |
 
 #### 使用第三方编辑器
 
