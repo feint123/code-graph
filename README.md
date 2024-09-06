@@ -1,6 +1,14 @@
 # code-graph
 an egui app that can display code graphics and find all references
 
+编程语言支持列表
+
+1. java
+2. javascript
+3. rust
+4. c
+
+
 #### 界面
 
 ![图片](media/screenshot-1.webp)

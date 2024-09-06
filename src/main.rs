@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 fn main() -> eframe::Result {
     let mut options = eframe::NativeOptions::default();
     options.persist_window = true;
+    // 还未适配dark_mode 暂时关闭跟随系统主题
+    options.follow_system_theme = false;
     eframe::run_native(
         "Code Graph",
         options,

@@ -3,9 +3,12 @@ use std::{fs::read_dir, path::Path};
 
 use eframe::egui::{CollapsingHeader, Ui};
 use egui::{emath, Color32, Pos2, Rect, Stroke, Vec2};
+use lang::{CQuery, JavaQuery, JsQuery, RustQuery, SymbolQuery};
 use tree_sitter::Node;
-use tree_sitter::{Language, Parser};
+use tree_sitter::Parser;
 use uuid::Uuid;
+
+pub mod lang;
 
 #[derive(Clone, PartialEq)]
 pub enum TreeEvent {
@@ -304,12 +307,17 @@ impl Graph {
             let fill_color = match node.block_type {
                 CodeBlockType::NORMAL => egui::Color32::LIGHT_GRAY,
                 CodeBlockType::FUNCTION => egui::Color32::LIGHT_BLUE,
-                CodeBlockType::STRUCT => egui::Color32::LIGHT_YELLOW,
+                CodeBlockType::STRUCT | CodeBlockType::CONST => egui::Color32::LIGHT_YELLOW,
                 CodeBlockType::CLASS => egui::Color32::LIGHT_GREEN,
                 _ => egui::Color32::LIGHT_GRAY,
             };
 
-            painter.rect(rect, 5.0, fill_color, Stroke::NONE);
+            painter.rect(
+                rect,
+                5.0,
+                fill_color,
+                Stroke::new(1.0, egui::Color32::DARK_GRAY),
+            );
 
             painter.text(
                 node_pos + Vec2::new(8.0, 4.0),
@@ -387,258 +395,19 @@ impl Graph {
 }
 
 pub fn valid_file_extention(extension: &str) -> bool {
-    return vec!["rs", "c", "h", "java"].contains(&extension);
+    return vec!["rs", "c", "h", "java", "js", "jsx"].contains(&extension);
 }
 
 pub fn get_symbol_query(extention: &str) -> Box<dyn SymbolQuery> {
     match extention {
         "rs" => Box::new(RustQuery),
         "java" => Box::new(JavaQuery),
-        "c" => Box::new(CQuery),
-        "h" => Box::new(CQuery),
+        "c" | "h" => Box::new(CQuery),
+        "js" | "jsx" => Box::new(JsQuery),
         _ => Box::new(RustQuery),
     }
 }
 
-pub trait SymbolQuery {
-    fn get_call(&self, code: &str, node: &Node) -> Option<CodeNode>;
-    fn get_lang(&self) -> Language;
-    fn get_definition(&self, code: &str, node: &Node) -> Option<CodeNode>;
-}
-pub struct RustQuery;
-pub struct CQuery;
-pub struct JavaQuery;
-
-impl SymbolQuery for CQuery {
-    fn get_call(&self, code: &str, node: &Node) -> Option<CodeNode> {
-        let node_type = node.kind();
-
-        if node_type == "call_expression" {
-            let block_text = &code[node.byte_range()];
-            let fe = node.child_by_field_name("function");
-            if let Some(fe) = fe {
-                let fi = fe.child_by_field_name("field");
-                if let Some(fi) = fi {
-                    let label = &code[fi.byte_range()];
-                    return Some(CodeNode::new(
-                        format!("{}", Uuid::new_v4()).as_str(),
-                        label,
-                        block_text,
-                        fi.start_position().row + 1,
-                        CodeBlockType::CALL,
-                        0,
-                    ));
-                } else {
-                    let label = &code[fe.byte_range()];
-                    return Some(CodeNode::new(
-                        format!("{}", Uuid::new_v4()).as_str(),
-                        label,
-                        block_text,
-                        fe.start_position().row + 1,
-                        CodeBlockType::CALL,
-                        0,
-                    ));
-                }
-            }
-        }
-        None
-    }
-
-    fn get_lang(&self) -> Language {
-        tree_sitter_c::language()
-    }
-
-    fn get_definition(&self, code: &str, node: &Node) -> Option<CodeNode> {
-        let node_type = node.kind();
-        let definition_list = [("function_definition", "compound_statement")];
-        for (root_type, end_type) in definition_list {
-            if node_type == root_type {
-                let mut output = String::new();
-                for child in node.children(&mut node.walk()) {
-                    if child.kind() == end_type {
-                        break;
-                    } else {
-                        let node_text = &code[child.byte_range()];
-                        output.push_str(node_text);
-                        output.push(' ');
-                    }
-                }
-                let block_type = match root_type {
-                    "function_definition" => CodeBlockType::FUNCTION,
-                    "struct_item" => CodeBlockType::STRUCT,
-                    _ => CodeBlockType::NORMAL,
-                };
-                let block_text = &code[node.byte_range()];
-                return Some(CodeNode::new(
-                    format!("{}", Uuid::new_v4()).as_str(),
-                    output.as_str().split("(").next().unwrap_or("bad symbol"),
-                    block_text,
-                    node.start_position().row + 1,
-                    block_type,
-                    0,
-                ));
-            }
-        }
-
-        None
-    }
-}
-
-impl SymbolQuery for JavaQuery {
-    fn get_call(&self, code: &str, node: &Node) -> Option<CodeNode> {
-        let node_type = node.kind();
-
-        if node_type == "method_invocation" {
-            let block_text = &code[node.byte_range()];
-            let fe = node.child_by_field_name("name");
-            if let Some(fe) = fe {
-                let label = &code[fe.byte_range()];
-                return Some(CodeNode::new(
-                    format!("{}", Uuid::new_v4()).as_str(),
-                    label,
-                    block_text,
-                    fe.start_position().row + 1,
-                    CodeBlockType::CALL,
-                    0,
-                ));
-            }
-        }
-        None
-    }
-
-    fn get_lang(&self) -> Language {
-        tree_sitter_java::language()
-    }
-
-    fn get_definition(&self, code: &str, node: &Node) -> Option<CodeNode> {
-        let node_type = node.kind();
-        let definition_list = [
-            ("class_declaration", "class_body"),
-            ("method_declaration", "formal_parameters"),
-            ("interface_declaration", "interface_body"),
-        ];
-        for (root_type, end_type) in definition_list {
-            if node_type == root_type {
-                let mut output = String::new();
-                for child in node.children(&mut node.walk()) {
-                    if child.kind() == end_type {
-                        break;
-                    } else {
-                        let node_text = &code[child.byte_range()];
-
-                        output.push_str(node_text);
-
-                        output.push(' ');
-                    }
-                }
-                let block_type = match root_type {
-                    "method_declaration" => CodeBlockType::FUNCTION,
-                    "class_declaration" => CodeBlockType::CLASS,
-                    "interface_declaration" => CodeBlockType::CLASS,
-                    _ => CodeBlockType::NORMAL,
-                };
-                let block_text = &code[node.byte_range()];
-                return Some(CodeNode::new(
-                    format!("{}", Uuid::new_v4()).as_str(),
-                    output.as_str(),
-                    block_text,
-                    node.start_position().row + 1,
-                    block_type,
-                    0,
-                ));
-            }
-        }
-
-        None
-    }
-}
-
-impl SymbolQuery for RustQuery {
-    fn get_lang(&self) -> Language {
-        tree_sitter_rust::language()
-    }
-
-    // call_expression 下 identifier 和 field_identifier
-    fn get_call(&self, code: &str, node: &Node) -> Option<CodeNode> {
-        let node_type = node.kind();
-
-        if node_type == "call_expression" {
-            let block_text = &code[node.byte_range()];
-            let fe = node.child_by_field_name("function");
-            if let Some(fe) = fe {
-                let fi = fe.child_by_field_name("field");
-                if let Some(fi) = fi {
-                    let label = &code[fi.byte_range()];
-                    return Some(CodeNode::new(
-                        format!("{}", Uuid::new_v4()).as_str(),
-                        label,
-                        block_text,
-                        fi.start_position().row + 1,
-                        CodeBlockType::CALL,
-                        0,
-                    ));
-                } else {
-                    let label = &code[fe.byte_range()];
-                    return Some(CodeNode::new(
-                        format!("{}", Uuid::new_v4()).as_str(),
-                        label,
-                        block_text,
-                        fe.start_position().row + 1,
-                        CodeBlockType::CALL,
-                        0,
-                    ));
-                }
-            }
-        }
-        None
-    }
-
-    fn get_definition(&self, code: &str, node: &Node) -> Option<CodeNode> {
-        let node_type = node.kind();
-        let definition_list = [
-            ("function_item", "parameters"),
-            ("impl_item", "declaration_list"),
-            ("struct_item", "field_declaration_list"),
-            ("trait_item", "declaration_list"),
-            ("function_signature_item", "parameters"),
-        ];
-        for (root_type, end_type) in definition_list {
-            if node_type == root_type {
-                let mut output = String::new();
-                for child in node.children(&mut node.walk()) {
-                    if child.kind() == end_type {
-                        break;
-                    } else {
-                        let node_text = &code[child.byte_range()];
-
-                        output.push_str(node_text);
-
-                        output.push(' ');
-                    }
-                }
-                let block_type = match root_type {
-                    "function_item" => CodeBlockType::FUNCTION,
-                    "struct_item" => CodeBlockType::STRUCT,
-                    "function_signature_item" => CodeBlockType::FUNCTION,
-                    "trait_item" => CodeBlockType::CLASS,
-                    "impl_item" => CodeBlockType::CLASS,
-                    _ => CodeBlockType::NORMAL,
-                };
-                let block_text = &code[node.byte_range()];
-                return Some(CodeNode::new(
-                    format!("{}", Uuid::new_v4()).as_str(),
-                    output.as_str(),
-                    block_text,
-                    node.start_position().row + 1,
-                    block_type,
-                    0,
-                ));
-            }
-        }
-
-        None
-    }
-}
 pub fn fetch_calls(path: &str, code: &str, symbol_query: Box<dyn SymbolQuery>) -> Vec<CodeNode> {
     let mut parser = Parser::new();
     parser
@@ -701,7 +470,7 @@ pub fn fetch_symbols(
         CodeNodeIndex(0),
         path,
         code,
-        0,
+        1,
         &symbol_query,
         graph,
     );
@@ -718,23 +487,17 @@ pub fn recursion_outline(
 ) {
     let mut current_id = parent_id;
     let code_node = symbol_query.get_definition(code, &node);
+    let mut level = level;
     if let Some(mut node) = code_node {
         node.file_path = path.to_string();
         node.level = level;
         let index = graph.add_node(node);
         current_id = index;
         graph.add_edge(parent_id, index);
+        level += 1;
     }
 
     for child in node.children(&mut node.walk()) {
-        recursion_outline(
-            child,
-            current_id,
-            path,
-            code,
-            level + 1,
-            symbol_query,
-            graph,
-        )
+        recursion_outline(child, current_id, path, code, level, symbol_query, graph)
     }
 }
