@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::{fs::read_dir, path::Path};
 
@@ -150,6 +150,7 @@ pub struct CodeNode {
     block_type: CodeBlockType,
     // position
     position: Pos2,
+    visiable: bool,
 }
 
 impl Default for CodeNode {
@@ -163,6 +164,7 @@ impl Default for CodeNode {
             level: 0,
             file_path: "".to_owned(),
             position: Pos2::ZERO,
+            visiable: true,
         }
     }
 }
@@ -185,6 +187,7 @@ impl CodeNode {
             block_type,
             position: Pos2::new(0.0, 0.0),
             level,
+            visiable: true,
         }
     }
 }
@@ -203,22 +206,22 @@ pub struct Graph {
 }
 
 lazy_static! {
-    static ref BLOCK_TYPE_DARK_COLORS: HashMap<CodeBlockType, egui::Color32> = {
+    static ref GRAPH_THEME: HashMap<eframe::Theme, HashMap<CodeBlockType, egui::Color32>> = {
+        let mut dark_block_type_map = HashMap::new();
+        dark_block_type_map.insert(CodeBlockType::NORMAL, egui::Color32::DARK_GRAY);
+        dark_block_type_map.insert(CodeBlockType::FUNCTION, egui::Color32::DARK_BLUE);
+        dark_block_type_map.insert(CodeBlockType::STRUCT, egui::Color32::from_rgb(204, 112, 0));
+        dark_block_type_map.insert(CodeBlockType::CONST, egui::Color32::from_rgb(204, 112, 0));
+        dark_block_type_map.insert(CodeBlockType::CLASS, egui::Color32::DARK_GREEN);
+        let mut light_block_type_map = HashMap::new();
+        light_block_type_map.insert(CodeBlockType::NORMAL, egui::Color32::LIGHT_GRAY);
+        light_block_type_map.insert(CodeBlockType::FUNCTION, egui::Color32::LIGHT_BLUE);
+        light_block_type_map.insert(CodeBlockType::STRUCT, egui::Color32::LIGHT_YELLOW);
+        light_block_type_map.insert(CodeBlockType::CONST, egui::Color32::LIGHT_YELLOW);
+        light_block_type_map.insert(CodeBlockType::CLASS, egui::Color32::LIGHT_GREEN);
         let mut m = HashMap::new();
-        m.insert(CodeBlockType::NORMAL, egui::Color32::DARK_GRAY);
-        m.insert(CodeBlockType::FUNCTION, egui::Color32::DARK_BLUE);
-        m.insert(CodeBlockType::STRUCT, egui::Color32::from_rgb(204, 112, 0));
-        m.insert(CodeBlockType::CONST, egui::Color32::from_rgb(204, 112, 0));
-        m.insert(CodeBlockType::CLASS, egui::Color32::DARK_GREEN);
-        m
-    };
-    static ref BLOCK_TYPE_LIGHT_COLORS: HashMap<CodeBlockType, egui::Color32> = {
-        let mut m = HashMap::new();
-        m.insert(CodeBlockType::NORMAL, egui::Color32::LIGHT_GRAY);
-        m.insert(CodeBlockType::FUNCTION, egui::Color32::LIGHT_BLUE);
-        m.insert(CodeBlockType::STRUCT, egui::Color32::LIGHT_YELLOW);
-        m.insert(CodeBlockType::CONST, egui::Color32::LIGHT_YELLOW);
-        m.insert(CodeBlockType::CLASS, egui::Color32::LIGHT_GREEN);
+        m.insert(eframe::Theme::Dark, dark_block_type_map);
+        m.insert(eframe::Theme::Light, light_block_type_map);
         m
     };
 }
@@ -257,11 +260,20 @@ impl Graph {
     /**
      * 对节点进行布局
      */
-    pub fn layout(&mut self, ui: &mut Ui) {
+    pub fn layout(&mut self, ui: &mut Ui, start_point: Option<Vec2>) {
         let (_, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::click());
         let mut sum_height = 0.0;
+        let mut start_p = Vec2::new(ui.available_width() / 2.0, 32.0);
+        if let Some(point) = start_point {
+            start_p = point;
+        }
         // 直线布局
-        for (index, node) in self.nodes.iter_mut().enumerate() {
+        for (index, node) in self
+            .nodes
+            .iter_mut()
+            .filter(|node| node.visiable)
+            .enumerate()
+        {
             let text_size = painter
                 .layout_no_wrap(
                     node.label.clone(),
@@ -270,8 +282,8 @@ impl Graph {
                 )
                 .size();
             node.position = Pos2::new(
-                ui.available_size().x / 2.0 + node.level as f32 * 20.0,
-                index as f32 * 16.0 + sum_height + 32.0,
+                start_p.x + node.level as f32 * 20.0,
+                index as f32 * 16.0 + sum_height + start_p.y,
             );
             sum_height += text_size.y;
         }
@@ -285,17 +297,20 @@ impl Graph {
         let stroke_color;
         let text_color;
         let grid_color;
+        let block_type_map;
 
         if ui.ctx().style().visuals.dark_mode {
             stroke_color = egui::Color32::LIGHT_GRAY;
             text_color = egui::Color32::WHITE;
             focus_stroke_color = egui::Color32::LIGHT_BLUE;
             grid_color = Color32::from_gray(50);
+            block_type_map = GRAPH_THEME.get(&eframe::Theme::Dark).unwrap();
         } else {
             focus_stroke_color = egui::Color32::BLUE;
             stroke_color = egui::Color32::DARK_GRAY;
             text_color = egui::Color32::DARK_GRAY;
             grid_color = Color32::from_gray(220);
+            block_type_map = GRAPH_THEME.get(&eframe::Theme::Light).unwrap();
         }
 
         // 获取可用区域
@@ -339,52 +354,47 @@ impl Graph {
                 .size();
 
             node_size_list.push(text_size + Vec2::new(16.0, 8.0));
-
-            let rect = egui::Rect::from_min_size(
-                node_pos,
-                egui::vec2(text_size.x + 16.0, text_size.y + 8.0),
-            );
-            let fill_color = if ui.ctx().style().visuals.dark_mode {
-                BLOCK_TYPE_DARK_COLORS
+            if node.visiable {
+                let rect = egui::Rect::from_min_size(
+                    node_pos,
+                    egui::vec2(text_size.x + 16.0, text_size.y + 8.0),
+                );
+                let fill_color = block_type_map
                     .get(&node.block_type)
                     .copied()
-                    .unwrap_or(egui::Color32::DARK_GRAY)
-            } else {
-                BLOCK_TYPE_LIGHT_COLORS
-                    .get(&node.block_type)
-                    .copied()
-                    .unwrap_or(egui::Color32::LIGHT_GRAY)
-            };
-            painter.rect(rect, 5.0, fill_color, Stroke::new(1.0, stroke_color));
+                    .unwrap_or(egui::Color32::DARK_GRAY);
 
-            painter.text(
-                node_pos + Vec2::new(8.0, 4.0),
-                egui::Align2::LEFT_TOP,
-                &node.label,
-                egui::FontId::default(),
-                text_color,
-            );
+                painter.rect(rect, 5.0, fill_color, Stroke::new(1.0, stroke_color));
 
-            let point_id = response.id.with(&node.id);
+                painter.text(
+                    node_pos + Vec2::new(8.0, 4.0),
+                    egui::Align2::LEFT_TOP,
+                    &node.label,
+                    egui::FontId::default(),
+                    text_color,
+                );
 
-            let node_response = ui.interact(rect, point_id, egui::Sense::click_and_drag());
-            if node_response.dragged() {
-                // 更新节点位置
-                node.position += node_response.drag_delta();
-            }
-            if node_response.clicked() {
-                self.focus_node = Some(CodeNodeIndex(index));
-            }
-            if let Some(f_node) = self.focus_node {
-                if f_node.0 == index {
-                    // ui.ctx().request_repaint();
-                    // let time = ui.input(|i| i.time);
-                    painter.rect(
-                        rect,
-                        5.0,
-                        egui::Color32::TRANSPARENT,
-                        Stroke::new(2.5, focus_stroke_color),
-                    );
+                let point_id = response.id.with(&node.id);
+
+                let node_response = ui.interact(rect, point_id, egui::Sense::click_and_drag());
+                if node_response.dragged() {
+                    // 更新节点位置
+                    node.position += node_response.drag_delta();
+                }
+                if node_response.clicked() {
+                    self.focus_node = Some(CodeNodeIndex(index));
+                }
+                if let Some(f_node) = self.focus_node {
+                    if f_node.0 == index {
+                        // ui.ctx().request_repaint();
+                        // let time = ui.input(|i| i.time);
+                        painter.rect(
+                            rect,
+                            5.0,
+                            egui::Color32::TRANSPARENT,
+                            Stroke::new(2.5, focus_stroke_color),
+                        );
+                    }
                 }
             }
 
@@ -396,6 +406,9 @@ impl Graph {
 
         // 绘制边
         for edge in &self.edges {
+            if !self.nodes[edge.to].visiable || !self.nodes[edge.from].visiable {
+                continue;
+            }
             let from = to_screen.transform_pos(self.nodes[edge.from].position)
                 + Vec2::new(0.0, node_size_list[edge.from].y / 2.0);
             let to = to_screen.transform_pos(self.nodes[edge.to].position)
@@ -412,6 +425,58 @@ impl Graph {
                 [Pos2::new(from.x - 10.0, to.y), to],
                 (1.0, egui::Color32::GRAY),
             );
+        }
+        // 绘制伸缩
+        if self.nodes.len() > 0 {
+            let mut level_queue = VecDeque::new();
+            level_queue.push_back(0);
+            while let Some(node_index) = level_queue.pop_front() {
+                let mut sub_nodes = vec![];
+                for edge in &self.edges {
+                    if edge.from == node_index {
+                        level_queue.push_back(edge.to);
+                        sub_nodes.push(edge.to);
+                    }
+                }
+                if !sub_nodes.is_empty() && self.nodes[node_index].visiable {
+                    let from = to_screen.transform_pos(self.nodes[node_index].position)
+                        + Vec2::new(0.0, node_size_list[node_index].y / 2.0);
+                    let tree_point = from + Vec2::new(-10.0, 0.0);
+                    painter.circle_filled(tree_point, 5.0, stroke_color);
+                    let point_id = response
+                        .id
+                        .with(format!("edge-{}", self.nodes[node_index].id));
+
+                    let node_response = ui.interact(
+                        egui::Rect::from_center_size(tree_point, Vec2::new(10.0, 10.0)),
+                        point_id,
+                        egui::Sense::click(),
+                    );
+                    if !self.nodes[sub_nodes[0]].visiable {
+                        painter.circle_stroke(
+                            tree_point,
+                            7.0,
+                            Stroke::new(2.0, focus_stroke_color),
+                        );
+                    }
+                    if node_response.clicked() {
+                        let mut change_visiable_queue = VecDeque::new();
+                        let visiable = !self.nodes[sub_nodes[0]].visiable;
+                        for index in sub_nodes {
+                            change_visiable_queue.push_back(index);
+                        }
+                        while let Some(visiable_index) = change_visiable_queue.pop_front() {
+                            self.nodes[visiable_index].visiable = visiable;
+                            for edge in &self.edges {
+                                if edge.from == visiable_index {
+                                    change_visiable_queue.push_back(edge.to);
+                                }
+                            }
+                        }
+                        self.layout(ui, Some(self.nodes[0].position.to_vec2()));
+                    }
+                }
+            }
         }
         response
     }

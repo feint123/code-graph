@@ -21,14 +21,14 @@ tree-sitter-java = "0.21.0"
 tree-sitter-c = "0.21.4"
 tree-sitter-javascript = "0.21.4"
 egui = "0.28.1"
-egui_extras = "0.28.1"
+egui_extras = { version = "0.28.1", features = ["all_loaders"] }
 font-kit = "0.14.2"
 eframe = { version = "0.28.1", features = ["persistence"] }
 rfd = "0.14.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 lazy_static = "1.5.0"
-
+image = { version = "0.25.2", features = ["png"] }
 
 [dependencies.uuid]
 version = "1.10.0"

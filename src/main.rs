@@ -12,7 +12,7 @@ use code_graph::{
     Graph, Tree, TreeEvent, TreeType,
 };
 use eframe::egui::{self};
-use egui::{text::LayoutJob, FontId, Rounding, TextFormat, Ui, Widget};
+use egui::{text::LayoutJob, FontId, Rounding, TextFormat, Ui, Vec2, Widget};
 use font_kit::{family_name::FamilyName, properties::Properties, source::SystemSource};
 use rfd::{FileDialog, MessageDialog};
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,11 @@ fn main() -> eframe::Result {
         "Code Graph",
         options,
         Box::new(|cc| {
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            // 修改一些基本配置
+            cc.egui_ctx.style_mut(|style| {
+                style.spacing.button_padding = Vec2::new(8.0, 2.0);
+            });
             let system_source = SystemSource::new();
             let mut fonts = egui::FontDefinitions::default();
             // 尝试加载系统默认字体
@@ -93,6 +98,12 @@ struct MyApp {
     graph: Graph,
     editor: Editor,
     rx: Option<Receiver<(Tree, Vec<CodeNode>)>>,
+    debug: DebugInfo,
+}
+#[derive(Default, Debug)]
+struct DebugInfo {
+    fps: f32,
+    enable: bool,
 }
 
 impl Default for MyApp {
@@ -108,6 +119,7 @@ impl Default for MyApp {
             graph: Graph::new(),
             editor: Editor::VSCode,
             rx: None,
+            debug: DebugInfo::default(),
         }
     }
 }
@@ -127,7 +139,7 @@ impl MyApp {
                     // 解析代码，生成图
                     fetch_symbols(&name, &self.code, get_symbol_query(ext), &mut self.graph);
                     // 布局
-                    self.graph.layout(ui);
+                    self.graph.layout(ui, None);
                 } else {
                     MessageDialog::new()
                         .set_title("提示")
@@ -178,7 +190,7 @@ impl MyApp {
                             ui.selectable_value(&mut self.editor, Editor::Zed, "Zed");
                         });
                     ui.add_space(4.0);
-                    if ui.button("打开").clicked() {
+                    if self.get_normal_button("打开").ui(ui).clicked() {
                         self.open_editor(
                             &self.current_node.file_path,
                             self.current_node.file_location,
@@ -238,6 +250,26 @@ impl MyApp {
                 });
             });
     }
+
+    fn draw_debug_info(&self, ctx: &egui::Context) {
+        let painter = ctx.debug_painter();
+
+        // 绘制帧率
+        painter.text(
+            egui::pos2(10.0, 10.0),
+            egui::Align2::LEFT_TOP,
+            format!("FPS: {:.1}", self.debug.fps),
+            egui::FontId::default(),
+            egui::Color32::GREEN,
+        );
+
+        // 可以添加更多调试信息...
+        // 例如，内存使用、对象数量等
+    }
+
+    fn get_normal_button(&mut self, text: &str) -> egui::Button {
+        return egui::Button::new(text).rounding(Rounding::same(5.0));
+    }
 }
 
 impl eframe::App for MyApp {
@@ -251,7 +283,13 @@ impl eframe::App for MyApp {
             .unwrap(),
         );
     }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.debug.enable {
+            let time = ctx.input(|i| i.unstable_dt);
+            self.debug.fps = 1.0 / time;
+            self.draw_debug_info(ctx);
+        }
         egui::SidePanel::left("side_panel")
             .resizable(true)
             .show_separator_line(false)
@@ -259,12 +297,16 @@ impl eframe::App for MyApp {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     ui.label("文件列表");
-                    if ui.button("选择目录").clicked() {
+                    // let file_icon = egui::include_image!("../assets/folder.png");
+                    let open_file_button = ui.add(self.get_normal_button("选择"));
+                    if open_file_button.clicked() {
                         // 打开系统目录
                         if let Some(path) = FileDialog::new().pick_folder() {
+                            self.root_path = path.as_os_str().to_str().unwrap().to_string();
                             self.project_root_path = Some(path);
                         }
                     }
+                    open_file_button.on_hover_text("选择项目目录");
                 });
                 if let Some(dir_path) = &self.project_root_path {
                     // 清除图里的数据
@@ -274,7 +316,6 @@ impl eframe::App for MyApp {
                         dir_path.as_os_str().to_str().unwrap(),
                         TreeType::Directory,
                     );
-                    self.root_path = dir_path.as_os_str().to_str().unwrap().to_string();
                     let dir_path = dir_path.clone();
                     let (tx, rx) = mpsc::channel();
                     self.rx = Some(rx);
