@@ -211,7 +211,7 @@ impl MyApp {
                         node.block.replace("\n", " ").replace(" ", "").as_str(),
                         0.0,
                         TextFormat {
-                            color: egui::Color32::DARK_GRAY,
+                            color: ui.style().visuals.text_color(),
                             ..Default::default()
                         },
                     );
@@ -249,6 +249,7 @@ impl MyApp {
                     );
                 });
             });
+        ui.add_space(10.0);
     }
 
     fn draw_debug_info(&self, ctx: &egui::Context) {

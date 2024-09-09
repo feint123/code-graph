@@ -478,7 +478,63 @@ impl Graph {
                 }
             }
         }
+        self.draw_minimap(ui, &node_size_list, &response);
         response
+    }
+
+    fn draw_minimap(&self, ui: &mut Ui, rect_size: &Vec<Vec2>, response: &egui::Response) {
+        let minimap_size = Vec2::new(200.0, 150.0); // 缩略图大小
+        let minimap_margin = 10.0; // 缩略图与画布边缘的间距
+
+        // 计算缩略图位置(右下角)
+        let minimap_pos = Pos2::new(
+            response.rect.right() - minimap_size.x - minimap_margin,
+            response.rect.bottom() - minimap_size.y - minimap_margin,
+        );
+
+        let minimap_rect = Rect::from_min_size(minimap_pos, minimap_size);
+
+        // 绘制缩略图背景
+        ui.painter()
+            .rect_filled(minimap_rect, 0.0, ui.visuals().extreme_bg_color);
+
+        // 计算缩放比例
+        let scale_x = minimap_size.x / response.rect.width();
+        let scale_y = minimap_size.y / response.rect.height();
+        let scale = scale_x.min(scale_y);
+
+        for (index, node) in self.nodes.iter().enumerate() {
+            if node.visiable {
+                // 检查节点是否在可视区域内
+
+                let mut minimap_node_pos = minimap_pos + (node.position.to_vec2() * scale);
+                let mut node_size = rect_size[index] * scale;
+                if minimap_node_pos.x < minimap_rect.min.x {
+                    node_size.x = node_size.x - (minimap_rect.min.x - minimap_node_pos.x);
+                    minimap_node_pos.x = minimap_rect.min.x;
+                }
+                if minimap_node_pos.y < minimap_rect.min.y {
+                    node_size.y = node_size.y - (minimap_rect.min.y - minimap_node_pos.y);
+                    minimap_node_pos.y = minimap_rect.min.y;
+                }
+                if minimap_node_pos.x + node_size.x > minimap_rect.max.x {
+                    node_size.x = minimap_rect.max.x - minimap_node_pos.x;
+                }
+                if minimap_node_pos.y + node_size.y > minimap_rect.max.y {
+                    node_size.y = minimap_rect.max.y - minimap_node_pos.y;
+                }
+                let node_rect = Rect::from_min_size(minimap_node_pos, node_size);
+
+                ui.painter()
+                    .rect_filled(node_rect, 0.0, ui.visuals().text_color());
+            }
+        }
+        // 绘制缩略图边框
+        ui.painter().rect_stroke(
+            minimap_rect,
+            0.0,
+            Stroke::new(1.0, ui.visuals().text_color()),
+        );
     }
 
     pub fn get_node(&mut self, index: CodeNodeIndex) -> CodeNode {
