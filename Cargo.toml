@@ -37,3 +37,9 @@ features = [
     "fast-rng",          # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
+
+[package.metadata.bundle]
+name = "Code Graph"
+identifier = "com.feint.codegraph"
+category = "Developer Tool"
+version = "0.0.3"

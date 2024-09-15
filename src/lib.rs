@@ -478,11 +478,17 @@ impl Graph {
                 }
             }
         }
-        self.draw_minimap(ui, &node_size_list, &response);
+        self.draw_minimap(ui, &node_size_list, &response, block_type_map);
         response
     }
 
-    fn draw_minimap(&self, ui: &mut Ui, rect_size: &Vec<Vec2>, response: &egui::Response) {
+    fn draw_minimap(
+        &self,
+        ui: &mut Ui,
+        rect_size: &Vec<Vec2>,
+        response: &egui::Response,
+        color_map: &HashMap<CodeBlockType, Color32>,
+    ) {
         let minimap_size = Vec2::new(200.0, 150.0); // 缩略图大小
         let minimap_margin = 10.0; // 缩略图与画布边缘的间距
 
@@ -525,8 +531,12 @@ impl Graph {
                 }
                 let node_rect = Rect::from_min_size(minimap_node_pos, node_size);
 
-                ui.painter()
-                    .rect_filled(node_rect, 0.0, ui.visuals().text_color());
+                let fill_color = color_map
+                    .get(&node.block_type)
+                    .copied()
+                    .unwrap_or(egui::Color32::DARK_GRAY);
+
+                ui.painter().rect_filled(node_rect, 0.0, fill_color);
             }
         }
         // 绘制缩略图边框
